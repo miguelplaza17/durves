@@ -6,10 +6,11 @@
   "type": "module",
   "scripts": {
     "start": "parcel index.html",
-    "build": "parcel build index.html"
+    "build": "canvas-sketch src/index.js --html=src/index.html --open"
   },
   "dependencies": {
     "canvas-sketch": "^0.7.7",
+    "canvas-sketch-cli": "^1.15.0",
     "canvas-sketch-util": "^1.10.0",
     "node-fetch": "^3.3.1",
     "parcel-bundler": "^1.6.1",
