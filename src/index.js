@@ -57,7 +57,7 @@ const sketch = async ({context, width, height, exportFrame }) => {
   
     let points = [];
 
-    let transparency = userSettings.transparency;
+    // Remove this line - we'll use userSettings.transparency directly
 
     var size = document.querySelectorAll("#aspectSlider, #valueAspect");
     var dotRadius = document.querySelectorAll("#roundSizeSlider, #valueRoundSize");
@@ -68,7 +68,7 @@ const sketch = async ({context, width, height, exportFrame }) => {
     const canvasWrapper = document.createElement('div');
     canvasWrapper.appendChild(context.canvas);
     
-    const drawPoints = () => {
+    const generatePoints = () => {
       // Clear previous points to avoid accumulation and enable smooth animation
       points = [];
       const waves = userSettings.waves;
@@ -97,10 +97,14 @@ const sketch = async ({context, width, height, exportFrame }) => {
         points.push(new Point({ x, y }));
       }
       
-      svgPoints = points.map(point => point.toSVG()).join('');
-      svgFile = `<svg xmlns="http://www.w3.org/2000/svg" viewbox="0 0 ${width} ${height}">${svgPoints}</svg>`;
+      // Generate SVG only when needed
+      svgPoints = points.map(point => point.toSVG(positionX, positionY, cellWidth, cellHeight, gridWidth, gridHeight)).join('');
+      svgFile = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}">${svgPoints}</svg>`;
       
     };
+
+    // Initialize points
+    generatePoints();
 
     document.getElementById("matrixSlider").addEventListener("input", (e) => {
       cols = Number(readMatrix());
@@ -111,9 +115,8 @@ const sketch = async ({context, width, height, exportFrame }) => {
       cellWidth = gridWidth / cols;
       cellHeight = gridHeight / rows;
   
-      points = []
-      
-      canva.update()
+      generatePoints();
+      canva.update();
     });
 
     size.forEach(function(size) {
@@ -129,8 +132,7 @@ const sketch = async ({context, width, height, exportFrame }) => {
         positionX = (width - gridWidth) * 0.5;
         positionY = (height - gridHeight) * 0.5;
     
-        points = [];
-    
+        generatePoints();
         canva.update();
       });
     });
@@ -138,9 +140,8 @@ const sketch = async ({context, width, height, exportFrame }) => {
     document.getElementById("colorpicker").addEventListener("input", (e) => {
       color = String(readColor());
   
-      points = []
-      
-      canva.update()
+      generatePoints();
+      canva.update();
     });
 
     dotRadius.forEach(function(dotRadius) {
@@ -182,7 +183,7 @@ const sketch = async ({context, width, height, exportFrame }) => {
     // Gradient size event listener
     document.getElementById("gradientSizeSlider").addEventListener("input", function(e) {
       userSettings.gradientSize = readGradientSize();
-      points = [];
+      generatePoints();
       canva.update();
     });
 
@@ -212,12 +213,23 @@ const sketch = async ({context, width, height, exportFrame }) => {
     });
   
     document.getElementById("downloadPNG").addEventListener('click', () => { 
-
+      // Temporarily stop animation and generate static points for PNG export
+      const wasAnimating = userSettings.isAnimating;
+      userSettings.isAnimating = false;
+      generatePoints();
+      
+      // Export the frame
       exportFrame();
-  
+      
+      // Restore animation state
+      userSettings.isAnimating = wasAnimating;
     });
 
     document.getElementById("downloadSVG").addEventListener('click', () => { 
+      // Temporarily stop animation and generate static points for SVG export
+      const wasAnimating = userSettings.isAnimating;
+      userSettings.isAnimating = false;
+      generatePoints();
 
       const svgOptimizer = optimize(svgFile);
       const optimizedSvg = svgOptimizer.data;
@@ -233,7 +245,9 @@ const sketch = async ({context, width, height, exportFrame }) => {
       a.click();
       
       URL.revokeObjectURL(url);
-
+      
+      // Restore animation state
+      userSettings.isAnimating = wasAnimating;
     });
 
   return (({ context, width, height }) => {
@@ -241,7 +255,7 @@ const sketch = async ({context, width, height, exportFrame }) => {
     context.fillStyle = "black";
     context.fillRect(0, 0, width, height);
 
-    if(transparency){
+    if(userSettings.transparency){
       context.clearRect(0, 0, width, height);
     }
 
@@ -249,7 +263,10 @@ const sketch = async ({context, width, height, exportFrame }) => {
       context.translate(positionX, positionY);
       context.translate(cellWidth * 0.5, cellHeight * 0.5);
 
-      drawPoints();
+      // Generate points if animating (for smooth animation)
+      if (userSettings.isAnimating) {
+        generatePoints();
+      }
 
       // Always draw with gradient
       const centerX = gridWidth * 0.5;
@@ -324,8 +341,36 @@ class Point {
     context.restore();
   }
 
-  toSVG() {
-    return `<circle cx="${this.x}" cy="${this.y}" r="${userSettings.roundSize/2}" fill="${color}" />`;
+  toSVG(positionX, positionY, cellWidth, cellHeight, gridWidth, gridHeight) {
+    // Apply the same transformations as the canvas
+    const transformedX = this.x + positionX + (cellWidth * 0.5);
+    const transformedY = this.y + positionY + (cellHeight * 0.5);
+    
+    // Calculate gradient opacity like in canvas - use the same center calculation
+    const centerX = positionX + gridWidth * 0.5 + (cellWidth * 0.5);
+    const centerY = positionY + gridHeight * 0.5 + (cellHeight * 0.5);
+    const maxDistance = Math.max(gridWidth, gridHeight) * 0.5 * userSettings.gradientSize;
+    
+    const distance = Math.sqrt((transformedX - centerX) ** 2 + (transformedY - centerY) ** 2);
+    const opacity = Math.max(0, 1 - (distance / maxDistance));
+    
+    // Convert color to rgba with opacity
+    const baseColor = String(userSettings.color);
+    let fillColor;
+    
+    if (baseColor.startsWith('#')) {
+      // Convert hex to rgba
+      const hex = baseColor.slice(1);
+      const r = parseInt(hex.substr(0, 2), 16);
+      const g = parseInt(hex.substr(2, 2), 16);
+      const b = parseInt(hex.substr(4, 2), 16);
+      fillColor = `rgba(${r}, ${g}, ${b}, ${opacity})`;
+    } else {
+      // Assume it's already in rgb format, convert to rgba
+      fillColor = baseColor.replace('rgb', 'rgba').replace(')', `, ${opacity})`);
+    }
+    
+    return `<circle cx="${transformedX}" cy="${transformedY}" r="${userSettings.roundSize/2}" fill="${fillColor}" />`;
   }
   
 }
