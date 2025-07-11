@@ -1,0 +1,140 @@
+MUDANÇAS PARA IMPLEMENTAR GRADIENT RADIAL NO DURVES
+==================================================
+
+1. ARQUIVO: src/index.html
+   - Adicionar controlador de Gradient Size na seção "Matrix settings":
+   
+   Inserir após o card do Color:
+   ```html
+   <div class="card">
+       <div class="labelValue">
+           <div class="label">
+               <img class="inputIcons" src="../src/assets/proportion.svg" alt="gradient size icon">
+               <label>Gradient Size</label>
+           </div>
+       </div>
+       <input type="range" min="0.1" max="6" step="0.1" value="6" id="gradientSizeSlider" alt="Gradient size slider">
+   </div>
+   ```
+
+2. ARQUIVO: src/inputReadFunctions.js
+   - Adicionar função para ler o valor do gradient size:
+   
+   Inserir no final do arquivo:
+   ```javascript
+   export const readGradientSize = () => {
+     var slider = document.getElementById("gradientSizeSlider");
+     return slider ? slider.value : 6;
+   };
+   ```
+
+3. ARQUIVO: src/settings.js
+   - Adicionar import da função readGradientSize:
+   
+   Alterar linha de import:
+   ```javascript
+   import {readMatrix, readRoundSize, readAmplitude, readWaves, readFrequency, readAspect, readColor, readGradientSize} from './inputReadFunctions.js';
+   ```
+   
+   - Adicionar gradientSize ao userSettings:
+   
+   Inserir no objeto userSettings:
+   ```javascript
+   gradientSize: readGradientSize(),
+   ```
+
+4. ARQUIVO: src/index.js
+   - Adicionar import da função readGradientSize:
+   
+   Alterar linha de import:
+   ```javascript
+   import {readMatrix, readRoundSize, readAmplitude, readWaves, readFrequency, readAspect, readColor, readGradientSize} from './inputReadFunctions.js';
+   ```
+   
+   - Adicionar event listener para o slider de gradient size:
+   
+   Inserir após os outros event listeners:
+   ```javascript
+   // Gradient size event listener
+   document.getElementById("gradientSizeSlider").addEventListener("input", function(e) {
+     userSettings.gradientSize = readGradientSize();
+     points = [];
+     canva.update();
+   });
+   ```
+   
+   - Alterar o desenho dos pontos para usar sempre gradient:
+   
+   Substituir o trecho:
+   ```javascript
+   points.forEach((point) => {
+     point.draw(context, userSettings.roundSize);
+   });
+   ```
+   
+   Por:
+   ```javascript
+   // Always draw with gradient
+   const centerX = gridWidth * 0.5;
+   const centerY = gridHeight * 0.5;
+   const maxDistance = Math.max(gridWidth, gridHeight) * 0.5 * userSettings.gradientSize;
+   
+   points.forEach((point) => {
+     point.drawWithGradient(context, userSettings.roundSize, centerX, centerY, maxDistance);
+   });
+   ```
+   
+   - Adicionar método drawWithGradient na classe Point:
+   
+   Inserir após o método draw:
+   ```javascript
+   drawWithGradient(context, roundSize, centerX, centerY, maxDistance) {
+     const { x, y } = this;
+     const halfRoundSize = roundSize * 0.5;
+     const doublePI = Math.PI * 2;
+
+     // Calculate distance from center
+     const distance = Math.sqrt((x - centerX) ** 2 + (y - centerY) ** 2);
+     
+     // Calculate opacity based on distance (1 at center, 0 at maxDistance)
+     const opacity = Math.max(0, 1 - (distance / maxDistance));
+     
+     // Convert color to rgba with opacity
+     const baseColor = String(color);
+     let rgbaColor;
+     
+     if (baseColor.startsWith('#')) {
+       // Convert hex to rgba
+       const hex = baseColor.slice(1);
+       const r = parseInt(hex.substr(0, 2), 16);
+       const g = parseInt(hex.substr(2, 2), 16);
+       const b = parseInt(hex.substr(4, 2), 16);
+       rgbaColor = `rgba(${r}, ${g}, ${b}, ${opacity})`;
+     } else {
+       // Assume it's already in rgb format, convert to rgba
+       rgbaColor = baseColor.replace('rgb', 'rgba').replace(')', `, ${opacity})`);
+     }
+
+     context.save();
+       context.fillStyle = rgbaColor;
+       context.beginPath();
+       context.arc(x, y, halfRoundSize, 0, doublePI);
+       context.fill();
+       context.closePath();
+     context.restore();
+   }
+   ```
+
+5. LÓGICA DO GRADIENT:
+   - O gradient é sempre ativo (sem toggle)
+   - Centralizado no meio do pattern
+   - Opacidade 100% no centro, diminuindo até 0% na borda
+   - Controlado por um slider de 0.1 a 6, iniciando em 6
+   - Maior valor = gradient mais suave (área maior)
+   - Menor valor = gradient mais intenso (área menor)
+
+6. OBSERVAÇÕES:
+   - Não há necessidade de modificar CSS
+   - O gradient é aplicado individualmente em cada ponto
+   - A cor base é mantida, apenas a opacidade varia
+   - O cálculo usa distância euclidiana do centro
